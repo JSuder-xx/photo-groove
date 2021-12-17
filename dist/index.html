@@ -44,9 +44,19 @@
             node: document.getElementById("app")
         });
         app.ports.setFilters.subscribe(function (options) {
-            requestAnimationFrame(function () {
-                Pasta.apply(document.getElementById("main-canvas"), options);
-            });
+            if (!options) {
+                return;
+            }
+
+            var imageElementId = options.id;
+            if (imageElementId === undefined) {
+                console.error('Options sent to Pasta without an imageElementId');
+            } else {
+                delete options.id;
+                requestAnimationFrame(function () {
+                    Pasta.apply(document.getElementById(imageElementId), options);
+                });
+            }
         });
         Pasta.addActivityListener(function (activity) {
             app.ports.activityChanges.send(activity);

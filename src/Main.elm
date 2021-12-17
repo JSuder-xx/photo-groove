@@ -1,55 +1,61 @@
-module Main exposing (Model, Msg(..), Page(..), init, isActive, main, parser, subscriptions, update, view, viewFooter, viewHeader)
+module Main exposing (Model, init, main, subscriptions, view, viewFooter, viewHeader)
 
+import AppPage exposing (AppPage(..))
 import Browser exposing (Document)
 import Browser.Navigation as Nav
+import Data.Function exposing (flip)
+import Effectful.Core as Effectful exposing (Updater(..))
+import Effectful.Monocle exposing (toParentEffectOptional, toParentUpdateOptional, toParentViewOptional)
 import Html exposing (Html, a, footer, h1, li, nav, text, ul)
 import Html.Attributes exposing (classList, href)
 import Html.Lazy exposing (lazy)
-import PhotoFolders as Folders
-import PhotoGallery as Gallery
+import Maybe.Extra as MaybeEx
+import Monocle.Compose as MCompose
+import Monocle.Lens exposing (Lens)
+import Monocle.Optional exposing (Optional)
+import PhotoFolders.Page as PhotoFolders
+import PhotoGallery.Page as PhotoGallery
+import Routing as Routing exposing (Route(..))
 import Url exposing (Url)
-import Url.Parser as Parser exposing ((</>), Parser)
 
 
 type alias Model =
-    { page : Page
+    { page : AppPage
     , key : Nav.Key
     , version : Float
     }
 
 
-type Page
-    = GalleryPage Gallery.Model
-    | FoldersPage Folders.Model
-    | NotFound
+type alias Msg =
+    Updater Model
 
 
-type Route
-    = Gallery
-    | Folders
-    | SelectedPhoto String
+pageL : Lens Model AppPage
+pageL =
+    Lens .page (\p m -> { m | page = p })
+
+
+modelPhotoGalleryL : Optional Model PhotoGallery.Model
+modelPhotoGalleryL =
+    MCompose.lensWithOptional AppPage.photoGalleryL pageL
+
+
+modelPhotoFoldersL : Optional Model PhotoFolders.Model
+modelPhotoFoldersL =
+    MCompose.lensWithOptional AppPage.photoFoldersL pageL
 
 
 view : Model -> Document Msg
 view model =
-    let
-        content =
-            case model.page of
-                FoldersPage folders ->
-                    Folders.view folders
-                        |> Html.map GotFoldersMsg
-
-                GalleryPage gallery ->
-                    Gallery.view gallery
-                        |> Html.map GotGalleryMsg
-
-                NotFound ->
-                    text "Not Found"
-    in
     { title = "Photo Groove, SPA Style"
     , body =
         [ lazy viewHeader model.page
-        , content
+        , model
+            |> MaybeEx.oneOf
+                [ toParentViewOptional modelPhotoFoldersL PhotoFolders.view
+                , toParentViewOptional modelPhotoGalleryL PhotoGallery.view
+                ]
+            |> Maybe.withDefault (text "No Found")
         , viewFooter
         ]
     }
@@ -60,56 +66,27 @@ viewFooter =
     footer [] [ text "One is never alone with a rubber duck. -Douglas Adams" ]
 
 
-viewHeader : Page -> Html Msg
+viewHeader : AppPage -> Html Msg
 viewHeader page =
     let
-        logo =
-            h1 [] [ text "Photo Groove" ]
-
-        links =
-            ul []
-                [ navLink Folders { url = "/", caption = "Folders" }
-                , navLink Gallery { url = "/gallery", caption = "Gallery" }
+        navLink : Route -> Html msg
+        navLink route =
+            li [ classList [ ( "active", AppPage.isActive { link = route, page = page } ) ] ]
+                [ a
+                    [ route |> Routing.urlString |> href ]
+                    [ route |> Routing.display |> text ]
                 ]
-
-        navLink : Route -> { url : String, caption : String } -> Html msg
-        navLink route { url, caption } =
-            li [ classList [ ( "active", isActive { link = route, page = page } ) ] ]
-                [ a [ href url ] [ text caption ] ]
     in
-    nav [] [ logo, links ]
+    nav []
+        [ h1 [] [ text "Photo Groove" ]
+        , ul [] ([ Folders, Gallery ] |> List.map navLink)
+        ]
 
 
-isActive : { link : Route, page : Page } -> Bool
-isActive { link, page } =
-    case ( link, page ) of
-        ( Gallery, GalleryPage _ ) ->
-            True
-
-        ( Gallery, _ ) ->
-            False
-
-        ( Folders, FoldersPage _ ) ->
-            True
-
-        ( Folders, _ ) ->
-            False
-
-        ( SelectedPhoto _, _ ) ->
-            False
-
-
-type Msg
-    = ClickedLink Browser.UrlRequest
-    | ChangedUrl Url
-    | GotFoldersMsg Folders.Msg
-    | GotGalleryMsg Gallery.Msg
-
-
-update : Msg -> Model -> ( Model, Cmd Msg )
-update msg model =
-    case msg of
-        ClickedLink urlRequest ->
+clickedLink : Browser.UrlRequest -> Updater Model
+clickedLink urlRequest =
+    Updater <|
+        \model ->
             case urlRequest of
                 Browser.External href ->
                     ( model, Nav.load href )
@@ -117,47 +94,13 @@ update msg model =
                 Browser.Internal url ->
                     ( model, Nav.pushUrl model.key (Url.toString url) )
 
-        ChangedUrl url ->
-            updateUrl url model
-
-        GotFoldersMsg foldersMsg ->
-            case model.page of
-                FoldersPage folders ->
-                    toFolders model (Folders.update foldersMsg folders)
-
-                _ ->
-                    ( model, Cmd.none )
-
-        GotGalleryMsg galleryMsg ->
-            case model.page of
-                GalleryPage gallery ->
-                    toGallery model (Gallery.update galleryMsg gallery)
-
-                _ ->
-                    ( model, Cmd.none )
-
-
-toFolders : Model -> ( Folders.Model, Cmd Folders.Msg ) -> ( Model, Cmd Msg )
-toFolders model ( folders, cmd ) =
-    ( { model | page = FoldersPage folders }
-    , Cmd.map GotFoldersMsg cmd
-    )
-
-
-toGallery : Model -> ( Gallery.Model, Cmd Gallery.Msg ) -> ( Model, Cmd Msg )
-toGallery model ( folders, cmd ) =
-    ( { model | page = GalleryPage folders }
-    , Cmd.map GotGalleryMsg cmd
-    )
-
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
     case model.page of
-        GalleryPage gallery ->
-            Gallery.subscriptions
-                gallery
-                |> Sub.map GotGalleryMsg
+        GalleryPage _ ->
+            PhotoGallery.subscriptions
+                |> Sub.map (toParentUpdateOptional modelPhotoGalleryL)
 
         _ ->
             Sub.none
@@ -170,36 +113,29 @@ init version url key =
 
 updateUrl : Url -> Model -> ( Model, Cmd Msg )
 updateUrl url model =
-    case Parser.parse parser url of
-        Just Gallery ->
-            Gallery.init model.version |> toGallery model
+    model
+        |> (case Routing.parse url of
+                Just Gallery ->
+                    toParentEffectOptional modelPhotoGalleryL (PhotoGallery.init model.version)
 
-        Just Folders ->
-            Folders.init Nothing |> toFolders model
+                Just Folders ->
+                    toParentEffectOptional modelPhotoFoldersL (PhotoFolders.init Nothing)
 
-        Just (SelectedPhoto filename) ->
-            Folders.init (Just filename) |> toFolders model
+                Just (SelectedPhoto filename) ->
+                    toParentEffectOptional modelPhotoFoldersL (PhotoFolders.init <| Just filename)
 
-        Nothing ->
-            ( { model | page = NotFound }, Cmd.none )
-
-
-parser : Parser (Route -> a) a
-parser =
-    Parser.oneOf
-        [ Parser.map Folders Parser.top
-        , Parser.map Gallery (Parser.s "gallery")
-        , Parser.map SelectedPhoto (Parser.s "photos" </> Parser.string)
-        ]
+                Nothing ->
+                    pageL.set NotFound >> flip Tuple.pair Cmd.none
+           )
 
 
 main : Program Float Model Msg
 main =
     Browser.application
         { init = init
-        , onUrlRequest = ClickedLink
-        , onUrlChange = ChangedUrl
+        , onUrlRequest = clickedLink
+        , onUrlChange = updateUrl >> Updater
         , subscriptions = subscriptions
-        , update = update
+        , update = Effectful.apply
         , view = view
         }
