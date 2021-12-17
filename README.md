@@ -16,13 +16,13 @@ The goals of this repository include
 
 I fully expected the Function Dispatch and Optics pattern to be signficantly better. However, it is pretty much a draw. As is often the case, the specific requirements will set coefficients of value and determine the best strategy. For example, if a development shop did not use advantages of messages such as persisted playback and time travelling debugging, and they also found long asynchronous workflows to be cluttering their codebase then functions might make sense. However, I think the Message approach is the default position of the community and there is certainly insufficient evidence from this experiment to effectively challenge that approach.
 
-- Benefits
+- Benefits of Functions
   - Improved locality
   - Improved combination of functions and effects.
-  - Significantly improved sequential asynchronous workflows (by using continuations).
-- Drawbacks
-  - Very slightly more difficult onboarding
-  - Bikeshedding/fragmentation
+  - Significantly improved sequential asynchronous workflows (by using continuations)
+- Drawbacks of Functions
+  - Very slightly more difficult onboarding (Learning optics)
+  - Bikeshedding/Fragmentation (Choosing optics library, divergence from standard TEA)
   - Harder to Unit Testing UX
   - No Persisted Playback
   - Drastically reduced usefulness of time travelling debugger.
