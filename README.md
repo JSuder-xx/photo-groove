@@ -14,18 +14,26 @@ The goals of this repository include
 
 ## TL;DR: Messages Make Sense
 
-I fully expected the Function Dispatch and Optics pattern to be signficantly better. However, it is pretty much a draw. As is often the case, the specific requirements will set coefficients of value and determine the best strategy. For example, if a development shop did not use advantages of messages such as persisted playback and time travelling debugging, and they also found long asynchronous workflows to be cluttering their codebase then functions might make sense. However, I think the Message approach is the default position of the community and there is certainly insufficient evidence from this experiment to effectively challenge that approach.
+I fully expected the Function Dispatch and Optics pattern to be signficantly better. However, it is within epsilon. As is often the case, the specific requirements will set coefficients of value and determine the best strategy. For example, the Function Dispatch technique would likely make sense in a situation where
+
+- the development shop did not use advantages of messages such as persisted playback and time travelling debugging
+- and they found long sequential asynchronous workflows to be cluttering their codebase with tons of message cases for interim states in the flow. Of course, with the function approach one loses a lot of the transparency of debugging said asynchronous workflows.
+
+However, I think the Message approach is the default position of the community and there is certainly insufficient evidence from this experiment to challenge that approach.
 
 - Benefits of Functions
-  - Improved locality
+  - Improved locality.
   - Improved combination of functions and effects.
-  - Significantly improved sequential asynchronous workflows (by using continuations)
+  - Very minor improvement in Parent/Child composition.
+  - Significantly improved sequential asynchronous workflows (by using continuations).
 - Drawbacks of Functions
-  - Very slightly more difficult onboarding (Learning optics)
-  - Bikeshedding/Fragmentation (Choosing optics library, divergence from standard TEA)
-  - Harder to Unit Testing UX
-  - No Persisted Playback
+  - Very slightly more difficult onboarding (Learning optics).
+  - Bikeshedding/Fragmentation (Choosing optics library, divergence from standard TEA).
+  - Harder to Unit Test UX.
+  - Inability to Persist Messages for Playback (ex. to a server).
   - Drastically reduced usefulness of time travelling debugger.
+  - Inconsistent with the Command Sourcing model (conceptually close to Event Sourcing).
+    - Therefore, forces a different paradigm of thinking between client and services.
 
 ## Dispatch Functions and Using Optics
 
@@ -52,11 +60,11 @@ someCommand argument1 argument2 =
     -- do the work
 ```
 
-However, with the function approach the signature and implementation are immediately adjacent to one another while with Messages as values they are separated.
+With the function approach the signature and implementation are immediately adjacent to one another while with Messages as values they are separated. In general, high locality of related concerns places less cognitive load on developers.
 
 #### **Inability to Fail to Handle (Very Very Minor)**
 
-The guidance is to avoid the use of the wildcard `_ ->` in case expressions, but if a developer did use such a catch-all then she might fail to handle a message entirely.
+The guidance is to avoid the use of the wildcard `_ ->` in case expressions, but if a developer did use such a catch-all then she might fail to handle a message entirely. I'm not saying. I'm just saying.
 
 #### **Combination (Minor)**
 
@@ -68,9 +76,14 @@ a [onClick (Model.setX 10 |> Effectful.Core.andThen (always <| Model.setY 20))] 
 
 I believe that with Messages as values one would need to either define a custom message for every combination OR create a Batch message case.
 
-#### **Parent/Child Composition (Draw)**
+#### **Parent/Child Composition (Very Minor)**
 
-Using Optics to implement parent/child composition costs very slightly more total lines of code, but it is also slightly more versatile and shifts the work more into the model space (my preference).
+In terms of total lines of code, using Optics to implement parent/child composition requires
+
+- **When** the child is a case/constructor of a union property on a parent model **then** slightly more total lines of code; 17 for Function/15 for Message.
+- **When** the child is stored in a property/field on a parent model **then** less total lines of code; 5 for Function/10 for Message.
+
+The Optics approach is slightly more versatile (in that the Lens/Prism can be used for other data spelunking) and shifts the work more into the model space (my preference) and out of the application architecture space.
 
 Given a parent page that has a model with a shape property of custom type Shape that is one of four different shapes.
 
@@ -165,7 +178,7 @@ GotCircleMsg circleMsg ->
             ( model, Cmd.none )
 ```
 
-- In the routing to children both the Function and the Message approaches are the same.
+- When routing to children (handling Url changes) both Function and the Message approaches require the same amount of code (when creating a helper for the Message case).
 
 #### **Asynchronous Workflows (Significant)**
 
@@ -208,7 +221,7 @@ statement words = String.join " " words ++ "."
 loadBestFriendsPet : Person -> Updater Model
 loadBestFriendsPet person =
     let
-        -- a little local helper because in this example we don't do anything interesting with the error cases
+        -- local helper because in this example we don't do anything interesting with the error cases
         handleResultWithErrorMessage : List String -> (a -> Updater Model) -> (Result err a -> Updater Model)
         handleResultWithErrorMessage errorMessageWords success result =
             case result of
