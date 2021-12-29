@@ -2,9 +2,9 @@
 
 ## Benefits
 
-### **Asynchronous Workflows (Significant)**
+### **Asynchronous Workflows (Minor)**
 
-The one area where I believe Message as Function does shine is asynchronous workflows.
+The one area where I believe Message as Function does shine is asynchronous workflows where the message as function allows for updating the model during the flow (updates during the sequence).
 
 ```elm
 import Effectful.Core exposing (Updater, updateWithEffect)
@@ -70,6 +70,27 @@ loadBestFriendsPet person =
                                                 (statement [ person.name, "'s best friend", bestFriend.name, "'s pet", pet.name ])
 ```
 
+Now if progress is not required, then the same ultimate result can be achieved using Tasks (and the Task example is more elegant... so there's that).
+
+```elm
+loadBestFriendsPet : Person -> Task String { pet : Pet, bestFriend : Person, person : Person }
+loadBestFriendsPet person =
+    getPersonById person.bestFriendId
+        |> Task.mapError (always <| statement [ "Error loading best friend id", String.fromInt person.bestFriendId ])
+        |> Task.andThen
+            (\bestFriend ->
+                bestFriend.petId
+                    |> Maybe.map
+                        (\petId ->
+                            petId
+                                |> getPetById
+                                |> Task.mapError (always <| statement [ "Failed to load pet id ", String.fromInt petId ])
+                        )
+                    |> Maybe.withDefault (Task.fail "The best friend has no pet.")
+                    |> Task.map (\pet -> { pet = pet, bestFriend = bestFriend, person = person })
+            )
+```
+
 ### **Improved Locality (Minor)**
 
 Both approaches require the same amount of code. In the Message as Value approach there is one line to define the Message case in the union and then one line to match on that case in the `update`.
@@ -106,6 +127,14 @@ a [onClick (Model.setX 10 |> Effectful.Core.andThen (always <| Model.setY 20))] 
 ```
 
 I believe that with Messages as values one would need to either define a custom message for every combination OR create a Batch message case.
+
+### **Consistency of Modeling (Minor)**
+
+When using functions and optics then all types are treated similarly where updates occur via functions exposed on the type's module.
+
+When using messages then types that represent application state offer a single `update` function (accepting a union message) while types that do not provide individual functions per update.
+
+In my opinion, it is cleaner and nicer to have a consistent method. 
 
 ### **Parent/Child Composition (Very Minor)**
 
